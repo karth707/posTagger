@@ -21,7 +21,7 @@ import com.kg.posTagger.objects.ViterbiBackScore;
 
 public class PosTagger {
     
-	private Logger log = LoggerFactory.getLogger(PosTagger.class);
+	private static Logger log = LoggerFactory.getLogger(PosTagger.class);
 	
 	private String START_STATE = "$$$$";
 	private String END_STATE = "%%%%";
@@ -155,19 +155,15 @@ public class PosTagger {
 			BufferedReader reader = new BufferedReader(new FileReader(new File(testingSetPath)));
 			BufferedWriter writer = new BufferedWriter(new FileWriter(new File(taggedOutputPath)));
 
-			String previousState = null;
 			String line;
 			List<Map<String, ViterbiBackScore>> v = new ArrayList<Map<String, ViterbiBackScore>>();
 			List<String> trueStates = new ArrayList<String>();
 			List<String> terms = new ArrayList<String>();
 			while((line=reader.readLine())!=null){
-				if(previousState == null){
-					previousState = START_STATE;
-					continue;
-				}
 				String observation = line.split("/")[0];
 				String trueState = (line.split("/").length>1)? line.split("/")[1] : UNKNOWN_STATE;
 				if(observation.equals("###")){
+					if(v.size()==0) continue;
 					List<String> statesGenerated = backtrack(v);
 					int index = 0;
 					for(int i=statesGenerated.size()-1; i>=0; i--){
@@ -181,7 +177,6 @@ public class PosTagger {
 					trueStates.clear();
 					terms.clear();
 					writer.write("###/###" + "\n");
-					previousState = null;
 				}else{
 					testObservations++;
 					terms.add(observation);
@@ -214,7 +209,7 @@ public class PosTagger {
 		List<String> states = new ArrayList<String>();
 		String prevTag = getMaxScoretag(v.get(v.size()-1));
 		states.add(prevTag);
-		for(int i=v.size()-2; i>0; i--){
+		for(int i=v.size()-1; i>0; i--){
 			states.add(v.get(i).get(prevTag).getState());
 		}
 		return states;
@@ -305,6 +300,7 @@ public class PosTagger {
 		
 		String testingSetPath = "/Users/KartheekGanesh/Desktop/entest.txt";
 		String taggedOutputPath = "/Users/KartheekGanesh/Desktop/out.txt";
- 		tagger.tag(testingSetPath, taggedOutputPath);
+ 		double errorRate = tagger.tag(testingSetPath, taggedOutputPath);
+ 		log.info("!!!!!--ERROR RATE: " + errorRate + " --!!!!!");
     }
 }
