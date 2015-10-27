@@ -5,8 +5,10 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -15,14 +17,14 @@ import org.slf4j.LoggerFactory;
 
 import com.kg.posTagger.objects.StateObservation;
 import com.kg.posTagger.objects.StateTransition;
+import com.kg.posTagger.objects.ViterbiBackScore;
 
 public class PosTagger {
     
 	private Logger log = LoggerFactory.getLogger(PosTagger.class);
-	//private Gson gson = new Gson();
 	
-	private String START_STATE = "$";
-	private String END_STATE = "%";
+	private String START_STATE = "$$$$";
+	private String END_STATE = "%%%%";
 	
 	// Used for calculating state transition probabilities
 	Map<StateTransition, Double> stateTransitionCounts;
@@ -69,6 +71,7 @@ public class PosTagger {
 		// for aij
 		for(String state1: stateCounts.keySet()){
 			for(String state2: stateCounts.keySet()){
+				
 				StateTransition st = new StateTransition(state1, state2);
 				Double trasnitionCount = stateTransitionCounts.get(st);
 				if(trasnitionCount!=null){
@@ -77,7 +80,8 @@ public class PosTagger {
 						stateTransitionProbabilities.put(st, trasnitionCount/stateCount);
 					}
 				}else{
-					stateTransitionProbabilities.put(st, 0.0);
+					//smoothing
+					stateTransitionProbabilities.put(st, 1.0/stateTransitionCounts.size());
 				}
 			}
 		}
@@ -93,7 +97,8 @@ public class PosTagger {
 						stateObservationProbabilities.put(so, observationCount/stateCount);
 					}
 				}else{
-					stateObservationProbabilities.put(so, 0.0);
+					//smoothing
+					stateObservationProbabilities.put(so, 1.0/stateObservationCounts.size());
 				}
 			}
 		}
@@ -102,7 +107,6 @@ public class PosTagger {
 	private void fillCountMaps(String trainingSetPath){
 		try{
 			BufferedReader reader = new BufferedReader(new FileReader(new File(trainingSetPath)));
-			
 			String previousState = null;
 			String line;
 			while((line=reader.readLine())!=null){
@@ -139,6 +143,137 @@ public class PosTagger {
 		}
 	}
 
+	private void tag(String testingSetPath, String taggedOutputPath) {
+		
+		log.info("Taging sentences now...");
+		log.info("TestingSetFile: " + testingSetPath);
+		log.info("TaggedOutputPath: " + taggedOutputPath);
+		long st = System.currentTimeMillis();
+		
+		try{
+			BufferedReader reader = new BufferedReader(new FileReader(new File(testingSetPath)));
+			BufferedWriter writer = new BufferedWriter(new FileWriter(new File(taggedOutputPath)));
+
+			String previousState = null;
+			String line;
+			List<Map<String, ViterbiBackScore>> v = new ArrayList<Map<String, ViterbiBackScore>>();
+			List<String> trueStates = new ArrayList<String>();
+			List<String> terms = new ArrayList<String>();
+			while((line=reader.readLine())!=null){
+				if(previousState == null){
+					previousState = START_STATE;
+					continue;
+				}
+				String observation = line.split("/")[0];
+				String trueState = line.split("/")[1];
+				if(observation.equals("###")){
+					List<String> statesGenerated = backtrack(v);
+					int index = 0;
+					for(int i=statesGenerated.size()-1; i>=0; i--){
+						if(!trueStates.get(index).equals(statesGenerated.get(i))){
+							errorCount++;
+						}
+						writer.write(terms.get(index) + "/" + statesGenerated.get(i) + "\n");
+						index++;
+					}
+					v.clear();
+					trueStates.clear();
+					terms.clear();
+					writer.write("###/###" + "\n");
+					previousState = null;
+				}else{
+					testObservations++;
+					terms.add(observation);
+					trueStates.add(trueState);
+					if(v.size()==0){
+						v.add(updateV(observation, null));
+					}else{
+						v.add(updateV(observation, v.get(v.size()-1)));
+					}
+				}
+			}
+			reader.close();
+			writer.close();
+			
+		}catch(Exception ex){
+			log.error("Error while tagging");
+			ex.printStackTrace();
+		}
+		
+		long et = System.currentTimeMillis();
+		log.info("Time taken for testing: " + (et-st) + " ms");
+		
+		log.info("Done with Taging sentences");
+		log.info("!!!!!--ERROR RATE: " + errorCount/testObservations + " --!!!!!");
+	}
+	
+
+	private List<String> backtrack(List<Map<String, ViterbiBackScore>> v) {
+		List<String> states = new ArrayList<String>();
+		String prevTag = getMaxScoretag(v.get(v.size()-1));
+		states.add(prevTag);
+		for(int i=v.size()-2; i>0; i--){
+			states.add(v.get(i).get(prevTag).getState());
+		}
+		return states;
+	}
+
+	// Using the viterbi algorithm, predict the state;
+	private Map<String, ViterbiBackScore> updateV(String observation, Map<String, ViterbiBackScore> prevV) {
+		
+		Map<String, ViterbiBackScore> v = new HashMap<String, ViterbiBackScore>();
+		//initialization
+		if(prevV==null){
+			for(String state: stateCounts.keySet()){
+				Double a0j = stateTransitionProbabilities.get(new StateTransition(START_STATE, state));
+				if(a0j==null) a0j = 1.0/stateTransitionProbabilities.size();
+				Double bj = stateObservationProbabilities.get(new StateObservation(observation, state));
+				if(bj==null) bj = 1.0/stateObservationProbabilities.size();
+				v.put(state, new ViterbiBackScore(a0j*bj, START_STATE));
+			}
+			return v;
+		}
+		
+		for(String state_j: stateCounts.keySet()){
+			Double bj = stateObservationProbabilities.get(new StateObservation(observation, state_j));
+			if(bj==null) bj = 1.0/stateObservationProbabilities.size();
+			
+			Map<String, Double> maxMap = new HashMap<String, Double>();
+			for(String state_i: stateCounts.keySet()){
+				Double aij = stateTransitionProbabilities.get(new StateTransition(state_i, state_j));
+				if(aij==null) aij = 1.0/stateTransitionProbabilities.size();
+				maxMap.put(state_i, prevV.get(state_i).getScore()*aij*bj);
+			}
+			ViterbiBackScore vitterbiScore = getViterbiBackScore(maxMap);
+			v.put(state_j, vitterbiScore);				 
+		}
+		return v;
+	}
+
+	private ViterbiBackScore getViterbiBackScore(Map<String, Double> v) {
+		String tag = "XXXX";
+		double max = 0;
+		for(String state: v.keySet()){
+			if(v.get(state)>max){
+				max = v.get(state);
+				tag = state;
+			}
+		}
+		return new ViterbiBackScore(max, tag);
+	}
+	
+	private String getMaxScoretag(Map<String, ViterbiBackScore> map) {
+		String tag = "XXXX";
+		double max = 0;
+		for(String state: map.keySet()){
+			if(map.get(state).getScore()>max){
+				max = map.get(state).getScore();
+				tag = state;
+			}
+		}
+		return tag;
+	}
+	
 	private void imcrementStateTransitionCounts(StateTransition st) {
 		if(!stateTransitionCounts.containsKey(st)){
 			stateTransitionCounts.put(st, 0.0);
@@ -158,98 +293,6 @@ public class PosTagger {
 			stateCounts.put(currentState, 0.0);
 		}
 		stateCounts.put(currentState, stateCounts.get(currentState) + 1);
-	}
-	
-	private void tag(String testingSetPath, String taggedOutputPath) {
-		
-		log.info("Taging sentences now...");
-		log.info("TestingSetFile: " + testingSetPath);
-		log.info("TaggedOutputPath: " + taggedOutputPath);
-		long st = System.currentTimeMillis();
-		
-		try{
-			BufferedReader reader = new BufferedReader(new FileReader(new File(testingSetPath)));
-			BufferedWriter writer = new BufferedWriter(new FileWriter(new File(taggedOutputPath)));
-
-			String previousState = null;
-			String line;
-			Map<String, Double> v = new HashMap<String, Double>();
-			while((line=reader.readLine())!=null){
-				if(previousState == null){
-					writer.write("###/###" + "\n");
-					previousState = START_STATE;
-					continue;
-				}
-				String state;
-				String observation = line.split("/")[0];
-				String trueState = line.split("/")[1];
-				if(observation.equals("###/###")){
-					state = END_STATE;
-					previousState = START_STATE;
-					writer.write("###/###" + "\n");
-				}else{
-					testObservations++;
-					state = getState(previousState, observation, v);
-					if(!state.equals(trueState)){
-						errorCount++;
-					}
-					writer.write(observation + "/" + state + "\n");
-					previousState = state;
-				}
-				
-			}
-			reader.close();
-			writer.close();
-			
-		}catch(Exception ex){
-			log.error("Error while tagging");
-			ex.printStackTrace();
-		}
-		
-		long et = System.currentTimeMillis();
-		log.info("Time taken for testing: " + (et-st) + " ms");
-		
-		log.info("Done with Taging sentences");
-		log.info("!!!!!--ERROR RATE: " + errorCount/testObservations + " --!!!!!");
-	}
-	
-
-	// Using the viterbi algorithm, predict the state;
-	private String getState(String previousState, String observation, Map<String, Double> v) {
-		
-		//initialization
-		if(previousState.equals(START_STATE)){
-			for(String state: stateCounts.keySet()){
-				Double a0j = stateTransitionProbabilities.get(new StateTransition(START_STATE, state));
-				if(a0j==null) a0j = 0.0;
-				Double bj = stateObservationProbabilities.get(new StateObservation(observation, state));
-				if(bj==null) bj = 0.0;
-				v.put(state, a0j*bj);
-			}
-			return getTagWithMaxScore(v);
-		}
-		
-		for(String state: stateCounts.keySet()){
-			
-			Double aij = stateTransitionProbabilities.get(new StateObservation(previousState, state));
-			if(aij==null) aij = 0.0;
-			Double bj = stateObservationProbabilities.get(new StateObservation(observation, state));
-			if(bj==null) bj = 0.0;
-			v.put(state, (v.get(state)*aij*bj));				 
-		}
-		return getTagWithMaxScore(v);
-	}
-
-	private String getTagWithMaxScore(Map<String, Double> v) {
-		String tag = "XXXX";
-		double max = 0;
-		for(String state: v.keySet()){
-			if(v.get(state)>max){
-				max = v.get(state);
-				tag = state;
-			}
-		}
-		return tag;
 	}
 
 	public static void main(String[] args){
