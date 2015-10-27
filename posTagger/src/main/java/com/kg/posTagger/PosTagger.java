@@ -25,6 +25,7 @@ public class PosTagger {
 	
 	private String START_STATE = "$$$$";
 	private String END_STATE = "%%%%";
+	private String UNKNOWN_STATE = "XXXX";
 	
 	// Used for calculating state transition probabilities
 	Map<StateTransition, Double> stateTransitionCounts;
@@ -165,7 +166,7 @@ public class PosTagger {
 					continue;
 				}
 				String observation = line.split("/")[0];
-				String trueState = line.split("/")[1];
+				String trueState = (line.split("/").length>1)? line.split("/")[1] : UNKNOWN_STATE;
 				if(observation.equals("###")){
 					List<String> statesGenerated = backtrack(v);
 					int index = 0;
@@ -251,7 +252,7 @@ public class PosTagger {
 	}
 
 	private ViterbiBackScore getViterbiBackScore(Map<String, Double> v) {
-		String tag = "XXXX";
+		String tag = UNKNOWN_STATE;
 		double max = 0;
 		for(String state: v.keySet()){
 			if(v.get(state)>max){
@@ -263,7 +264,7 @@ public class PosTagger {
 	}
 	
 	private String getMaxScoretag(Map<String, ViterbiBackScore> map) {
-		String tag = "XXXX";
+		String tag = UNKNOWN_STATE;
 		double max = 0;
 		for(String state: map.keySet()){
 			if(map.get(state).getScore()>max){
