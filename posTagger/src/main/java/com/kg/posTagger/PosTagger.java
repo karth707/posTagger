@@ -227,9 +227,9 @@ public class PosTagger {
 		if(prevV==null){
 			for(String state: stateCounts.keySet()){
 				Double a0j = stateTransitionProbabilities.get(new StateTransition(START_STATE, state));
-				if(a0j==null) a0j = 1.0/stateTransitionProbabilities.size();
+				if(a0j==null) a0j = 1.0/stateTransitionCounts.size();
 				Double bj = stateObservationProbabilities.get(new StateObservation(observation, state));
-				if(bj==null) bj = 1.0/stateObservationProbabilities.size();
+				if(bj==null) bj = 1.0/stateObservationCounts.size();
 				v.put(state, new ViterbiBackScore(a0j*bj, START_STATE));
 			}
 			return v;
@@ -237,12 +237,12 @@ public class PosTagger {
 		
 		for(String state_j: stateCounts.keySet()){
 			Double bj = stateObservationProbabilities.get(new StateObservation(observation, state_j));
-			if(bj==null) bj = 1.0/stateObservationProbabilities.size();
+			if(bj==null) bj = 1.0/stateObservationCounts.size();
 			
 			Map<String, Double> maxMap = new HashMap<String, Double>();
 			for(String state_i: stateCounts.keySet()){
 				Double aij = stateTransitionProbabilities.get(new StateTransition(state_i, state_j));
-				if(aij==null) aij = 1.0/stateTransitionProbabilities.size();
+				if(aij==null) aij = 1.0/stateTransitionCounts.size();
 				maxMap.put(state_i, prevV.get(state_i).getScore()*aij*bj);
 			}
 			ViterbiBackScore vitterbiScore = getViterbiBackScore(maxMap);
