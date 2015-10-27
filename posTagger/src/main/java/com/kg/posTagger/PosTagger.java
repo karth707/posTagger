@@ -54,7 +54,7 @@ public class PosTagger {
 		errorCount = 0;
 	}
 	
-	private void trainHMM(String trainingSetPath) {
+	public void trainHMM(String trainingSetPath) {
 		log.info("Training HMM now...");
 		log.info("TrainingSetFile: " + trainingSetPath);
 		long st = System.currentTimeMillis();
@@ -144,7 +144,7 @@ public class PosTagger {
 		}
 	}
 
-	private void tag(String testingSetPath, String taggedOutputPath) {
+	public double tag(String testingSetPath, String taggedOutputPath) {
 		
 		log.info("Taging sentences now...");
 		log.info("TestingSetFile: " + testingSetPath);
@@ -205,7 +205,8 @@ public class PosTagger {
 		log.info("Time taken for testing: " + (et-st) + " ms");
 		
 		log.info("Done with Taging sentences");
-		log.info("!!!!!--ERROR RATE: " + errorCount/testObservations + " --!!!!!");
+		Double errorRate = errorCount/testObservations;
+		return errorRate;
 	}
 	
 
